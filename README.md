@@ -25,7 +25,7 @@ Pakefile currently uses annotations and types to differenciate between the vario
     ```python
     @PakefileTarget()
     def build(self):
-        self.QEMU_i386(self.QEMU_i386_ARGS)
+        QEMU_i386(QEMU_i386_ARGS)
         ...
     ```
 

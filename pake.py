@@ -105,6 +105,7 @@ class PakeEnvironment():
         exec(pakefile_code, globals)
 
         # Find the class
+        pakefile_class_name = None
         pakefile_class = None
 
         for attrib_name in dir(module):
@@ -115,22 +116,24 @@ class PakeEnvironment():
 
                 if len(base_classes) >= 2:
                     if base_classes[1].__name__ == Pakefile.__name__:
+                        pakefile_class_name = attrib_name
                         pakefile_class = attrib
 
-        pakefile = pakefile_class()
-        pakefile.env = self
-
-        # Define the variables
+        # Define the variables in the global dict
         for attrib_name in dir(pakefile_class):
             if not attrib_name.startswith('__'):
                 attrib = getattr(pakefile_class, attrib_name)
                 
                 if type(attrib) != type and type(attrib) != FunctionType:
                     if type(attrib) != PakeCommand:
-                        pakefile.env.set(pakefile.__class__.__name__, attrib_name, attrib)
-                    setattr(pakefile, attrib_name, attrib)
+                        globals[attrib_name] = attrib
+        
+        # Re-execute the code with the new globals!
+        exec(pakefile_code, globals)
 
-        return pakefile
+        pakefile_class = getattr(module, pakefile_class_name)
+
+        return pakefile_class()
 
     def __get_pakefile__(self, name: str) -> Pakefile:
         try:
@@ -139,8 +142,12 @@ class PakeEnvironment():
             return None
 
     def run(self, cmd: str, args: [str]):
-        res = subprocess.run([cmd] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
+        try:
+            res = subprocess.run([cmd] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except FileNotFoundError:
+            print("Pakefile: command '" + cmd + "' not found!")
+            return
+
         if res.stdout != '':
             sys.stdout.write(res.stdout.decode('utf-8'))
             sys.stdout.flush()
