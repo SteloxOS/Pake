@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import sys, re, subprocess, os
+import sys, re, subprocess, os, inspect, shlex
 from inspect import getmro
 from types import FunctionType, MethodType, ModuleType
 from importlib.machinery import SourceFileLoader
@@ -9,27 +9,22 @@ class PakeCommand():
     def __init__(self, command: str):
         self.command = command
 
+    def __to_function__(self, globals):
+        def execute(args):
+            env = globals['env']
+
+            function = inspect.currentframe().f_back.f_code.co_name
+            target = env.__get_target__(globals['__name__'], function)
+
+            env.run(self.command, env.__parse_args__(globals['__name__'], args))
+        return execute
+
+    def __str__(self) -> str:
+        return self.command
+
 class Pakefile:
     def __init__(self):
         pass
-
-    def __setattr__(self, name, value):
-        super(Pakefile, self).__setattr__(name, value)
-
-    def __getattribute__(self, key):
-        try:
-            attribute = super(Pakefile, self).__getattribute__(key)
-
-            if type(attribute) == PakeCommand:
-                def execute(*args):
-                    self.env.run(attribute.command, list(args))
-                return execute
-
-            return attribute
-        except AttributeError as e:
-            print("Getting: " + key)
-            
-            return self.env.get(self.__class__.__name__, key)
 
 class PakeEnvironment():
     def __init__(self):
@@ -60,7 +55,7 @@ class PakeEnvironment():
     def __has_target__(self, module: str, name: str) -> bool:
         try:
             if module in self.__targets__:
-                if name in self.__targets__:
+                if name in self.__targets__[module]:
                     return True
         except KeyError:
             return False
@@ -125,15 +120,21 @@ class PakeEnvironment():
                 attrib = getattr(pakefile_class, attrib_name)
                 
                 if type(attrib) != type and type(attrib) != FunctionType:
-                    if type(attrib) != PakeCommand:
+                    if attrib.__class__.__name__ != PakeCommand.__name__:
                         globals[attrib_name] = attrib
+                    else:
+                        globals[attrib_name] = attrib.__to_function__(globals)
         
         # Re-execute the code with the new globals!
         exec(pakefile_code, globals)
 
         pakefile_class = getattr(module, pakefile_class_name)
 
-        return pakefile_class()
+        pakefile = pakefile_class()
+
+        self.__pakefiles__[pakefile.__module__] = pakefile
+
+        return pakefile
 
     def __get_pakefile__(self, name: str) -> Pakefile:
         try:
@@ -141,9 +142,23 @@ class PakeEnvironment():
         except KeyError:
             return None
 
-    def run(self, cmd: str, args: [str]):
+    def __parse_args__(self, module: str, args: str) -> str:
+        parsed = args
+        
+        match = re.search(r'(\$\([\w]+\))', parsed)
+        while match is not None:
+            group = match.group(1)
+            variable = group[2:-1]
+
+            parsed = parsed.replace(group, str(getattr(self.__get_pakefile__(module), variable)))
+
+            match = re.search(r'(\$\([\w]+\))', parsed)
+
+        return parsed
+
+    def run(self, cmd: str, args: str = ""):
         try:
-            res = subprocess.run([cmd] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            res = subprocess.run([cmd] + shlex.split(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError:
             print("Pakefile: command '" + cmd + "' not found!")
             return

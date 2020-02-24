@@ -17,9 +17,17 @@ Pakefile currently uses annotations and types to differenciate between the vario
     ```python
     QEMU_i386_ARGS = '--version'
     ```
+    * Like Make, variables can be defined using the values of other variables.
+    ```python
+    C_FLAGS = '-o $(EXE) $(C_SOURCES)'
+    C_SOURCES = 'hello.c'
+    EXE = 'hello'
+    # They also can be declared out-of-order!
+    # Variables are not evaluated until executed
+    ```
 * Variables that can be executed must be wrapped in a `PakeCommand` object
     ```python
-    QEMU_i386 = PakeComand('qemu-system-i386')
+    CC = PakeComand('gcc')
     ```
 * Targets are methods denoted by a `@PakefileTarget` annotation.
     ```python
@@ -29,4 +37,4 @@ Pakefile currently uses annotations and types to differenciate between the vario
         ...
     ```
 
-To execute the `build` target, assuming that code is put into a file called `Pakefile`, run `./pake.py Pakefile build`
+To execute the `build` target, assuming that code is put into a file called `Pakefile.py`, run `./pake.py Pakefile.py build`
