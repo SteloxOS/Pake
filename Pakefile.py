@@ -1,10 +1,22 @@
-QEMU_i386       = PakeCommand("qemu-system-i386")
-QEMU_i386_ARGS  = "--version"
+CC = PakeCommand('gcc')
+ECHO = PakeCommand('echo')
 
-@PakeTarget(default = True)
-def test_target(self):
-    QEMU_i386(QEMU_i386_ARGS)
+C_FLAGS = '-o $(EXE) $(C_SOURCES)'
 
-@PakeTarget()
+C_SOURCES = "hello.c"
+EXE = "hello"
+
+@PakeTarget(
+    dependencies = "$(EXE)",
+    default = True
+)
+def run(self):
+    env.run("./" + EXE)
+
+@PakeTarget(
+    dependencies = "$(C_SOURCES)",
+    targets = "$(EXE)"
+)
 def build(self):
-    env.run("echo", ["Hello, world!"])
+    ECHO('$(CC) $(C_FLAGS)')
+    CC('$(C_FLAGS)')
