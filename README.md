@@ -38,3 +38,8 @@ Pakefile currently uses annotations and types to differenciate between the vario
     ```
 
 To execute the `build` target, assuming that code is put into a file called `Pakefile.py`, run `./pake.py Pakefile.py build`
+
+## Performance
+Performance data for the sample script (`Pakefile.py`) can be seen visualized in `pycallgraph.png`.
+
+This was gathered using [pycallgraph](https://pycallgraph.readthedocs.io/en/master/), using the command `pycallgraph graphviz -- ./pake.py Pakefile.py run`
