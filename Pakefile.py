@@ -8,25 +8,27 @@ C_FLAGS = '-o $(EXE) $(C_SOURCES)'
 C_SOURCES = "hello.c"
 EXE = "hello"
 
-# The PakeTarget decorator gives information on the target (duh).
-# The system looks at the dependencies and executes the PakeTarget with the corresponding target.
+# The PakeRule decorator gives information on the rule.
+# Simplified, the system looks at the dependency and executes the PakeRule with the corresponding target.
+# See Pakefile.execute_rule() for more specific conditions
+#
 # In this case, when running `./pake.py Pakefile.py run`, the `build` target will be executed first.
 # Wildcards are not yet supported
-@PakeTarget(
-    dependencies = "$(EXE)",
+@PakeRule(
+    dependency = "$(EXE)",
     default = True # If the target is omitted when executing, this will be the target executed
 )
-def run(self):
+def run():
     # `env.run(cmd, args)` is the preferred method of running shell commands:
-    # it can evaluate vars passed as arguments and properly handle errors.
+    # it properly handle errors, but cannot evaluate variables inside the cmd/args
     # However, in this case, it would be better to write this as a variable in order to maintain consistency.
     # e.g.: RUN_HELLO = PakeCommand('./hello')
     env.run("./" + EXE)
 
-@PakeTarget(
-    dependencies = "$(C_SOURCES)",
-    targets = "$(EXE)"
+@PakeRule(
+    dependency = "$(C_SOURCES)",
+    target = "$(EXE)"
 )
-def build(self):
+def build():
     ECHO('$(CC) $(C_FLAGS)')
     CC('$(C_FLAGS)')
