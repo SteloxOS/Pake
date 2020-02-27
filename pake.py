@@ -1,160 +1,226 @@
 #!/usr/bin/python3
 
-import sys, re, subprocess, os, inspect, shlex
+import inspect, os, re, shlex, subprocess, sys, importlib
+from types import ModuleType, FunctionType
 from inspect import getmro
-from types import FunctionType, MethodType, ModuleType
-from importlib.machinery import SourceFileLoader
 
-class PakeCommand():
-    def __init__(self, command: str):
-        self.command = command
+def PakeCommand(command: str) -> FunctionType:
+    module = inspect.currentframe().f_back
 
-    def __to_function__(self, globals):
-        def execute(args):
-            env = globals['env']
+    module_name = module.f_globals['__name__']
+    module_env = module.f_globals['env']
 
-            function = inspect.currentframe().f_back.f_code.co_name
-            target = env.__get_target__(globals['__name__'], function)
+    pakefile = module_env.get_pakefile(module_name)
 
-            env.run(self.command, env.__parse_args__(globals['__name__'], args))
-        return execute
+    parsed_command = pakefile.eval(command)
 
-    def __str__(self) -> str:
-        return self.command
+    def __pakecommand_execute__(args):
+        module_env.run(parsed_command, pakefile.eval(args))
 
-class Pakefile:
+    __pakecommand_execute__.__pakecommand_command__ = parsed_command
+
+    return __pakecommand_execute__
+
+class PakeRule():
+    """ A decorator for Pakefile rules. """
+    
+    def __init__(self, default: bool = False, target: str = None, dependency: str = None):
+        self.name = None
+
+        self.default = default
+        self.target = target
+        self.dependency = dependency
+
+    def __call__(self, function):
+        self.name = function.__name__
+
+        env = function.__globals__.get('env')
+        env.get_pakefile(function.__module__).__add_rule__(self.name, self, function)
+
+        return None
+
+    def get_name(self) -> str:
+        """ Returns the name of this rule, always equal to the name of the function decorated """
+        return self.name
+
+    def is_default(self) -> bool:
+        """ Returns True if this is the default rule of the Pakefile """
+        return self.default
+
+    def get_target(self) -> str:
+        return self.target
+
+    def get_dependency(self) -> str:
+        return self.dependency
+
+class Pakefile():
+    """
+    An object representing a loaded Pakefile. 
+    Contains information on the script's variables and rules
+    """
+
     def __init__(self):
-        pass
+        self.__rules__ = dict()
+        self.__pakefile_class__ = None
 
-class PakeEnvironment():
-    def __init__(self):
-        self.__variables__ = dict()
-        self.__targets__ = dict()
-        self.__pakefiles__ = dict()
+    def eval(self, string: str) -> str:
+        """ Evaluates the given string containing variables """
 
-    def set(self, module: str, variable: str, value: object):
-        try:
-            self.__variables__[module][variable] = value
-        except KeyError:
-            self.__variables__[module] = dict()
-            self.__variables__[module][variable] = value
-
-    def get(self, module: str, variable: str) -> object:
-        return self.__variables__[module][variable]
-
-    def __get_targets__(self) -> dict:
-        return self.__targets__
-
-    def __get_module_targets__(self, module: str):
-        try:
-            if module in self.__targets__:
-                return self.__targets__[module]
-        except KeyError:
-            return None
-
-    def __has_target__(self, module: str, name: str) -> bool:
-        try:
-            if module in self.__targets__:
-                if name in self.__targets__[module]:
-                    return True
-        except KeyError:
-            return False
-
-    def __get_target__(self, module: str, name: str) -> object:
-        if self.__has_target__(module, name):
-            return self.__targets__[module][name]
-        else:
-            return None
-
-    def __add_target__(self, module: str, name: str, target: object):
-        if self.__get_module_targets__(module) is not None:
-            self.__targets__[module][name] = target
-        else:
-            self.__targets__[module] = {name: target}
-
-    def __load_pakefile__(self, path: str) -> Pakefile:
-        path = os.path.abspath(path)
-
-        # Need to generate a valid classname, requires some regex work
-        classname = re.sub("[.:\\" + os.sep + "]", '_', path) #.replace(os.sep, '_') path.replace(os.sep, '_')
-        
-        # The classname will start with an '_' on Linux
-        if classname.startswith('_'):
-            classname = classname[1:]
-
-        # Validate the classname
-        if re.match(r'^[a-zA-Z]+(\w)*$', classname) is None:
-            print("Error: Pakefile name '" + path + "' can only contain letters, numbers, and underscores and must start with a letter")
-            return None
-
-        # Generate the code
-        pakefile_code = "from pake import PakeCommand, Pakefile, PakeTarget, PakeEnvironment\nclass " + classname + "(Pakefile):\n\t" + open(path).read().replace('\n', '\n\t')
-        
-        module = ModuleType(path)
-        sys.modules[path] = module
-
-        globals = module.__dict__
-        globals['env'] = self
-        
-        # Execute the code!
-        exec(pakefile_code, globals)
-
-        # Find the class
-        pakefile_class_name = None
-        pakefile_class = None
-
-        for attrib_name in dir(module):
-            attrib = getattr(module, attrib_name)
-
-            if type(attrib) == type:
-                base_classes = getmro(getattr(module, attrib_name))
-
-                if len(base_classes) >= 2:
-                    if base_classes[1].__name__ == Pakefile.__name__:
-                        pakefile_class_name = attrib_name
-                        pakefile_class = attrib
-
-        # Define the variables in the global dict
-        for attrib_name in dir(pakefile_class):
-            if not attrib_name.startswith('__'):
-                attrib = getattr(pakefile_class, attrib_name)
-                
-                if type(attrib) != type and type(attrib) != FunctionType:
-                    if attrib.__class__.__name__ != PakeCommand.__name__:
-                        globals[attrib_name] = attrib
-                    else:
-                        globals[attrib_name] = attrib.__to_function__(globals)
-        
-        # Re-execute the code with the new globals!
-        exec(pakefile_code, globals)
-
-        pakefile_class = getattr(module, pakefile_class_name)
-
-        pakefile = pakefile_class()
-
-        self.__pakefiles__[pakefile.__module__] = pakefile
-
-        return pakefile
-
-    def __get_pakefile__(self, name: str) -> Pakefile:
-        try:
-            return self.__pakefiles__[name]
-        except KeyError:
-            return None
-
-    def __parse_args__(self, module: str, args: str) -> str:
-        parsed = args
-        
+        parsed = string
         match = re.search(r'(\$\([\w]+\))', parsed)
+
         while match is not None:
             group = match.group(1)
             variable = group[2:-1]
 
-            parsed = parsed.replace(group, str(getattr(self.__get_pakefile__(module), variable)))
+            attr = getattr(self.__pakefile_class__, variable)
+            str_attr = None
+
+            # Account for PakeCommands!
+            if type(attr) is FunctionType:
+                pakecommand = getattr(attr, '__pakecommand_command__')
+                str_attr = pakecommand
+            
+            if str_attr is None:
+                str_attr = str(attr)
+
+            parsed = parsed.replace(group, str_attr)
 
             match = re.search(r'(\$\([\w]+\))', parsed)
 
         return parsed
+
+    def get_rules(self) -> dict:
+        """
+        Returns a dict of rule names and its respective rule.
+        The name of the rule is simply the name of the method decorated
+        """
+        
+        return self.__rules__
+        
+    def get_rule(self, name: str) -> tuple:
+        return self.__rules__.get(name, None)
+
+    def __add_rule__(self, name: str, rule: PakeRule, func):
+        self.__rules__[name] = (rule, func)
+
+    def execute_rule(self, rule_name: str):
+        """ Executes the provided rule after searching and building dependencies """
+
+        # .get_rule(str) returns a tuple: (PakeRule, function)
+        rule = self.get_rule(rule_name)
+
+        if rule is None:
+            print("*** No rule '" + rule_name + "' in '" + self.__pakefile_class__.__module__ + "'. Stop ***")
+            sys.exit()
+            return
+
+        dependency = rule[0].get_dependency()
+
+        if dependency is None:
+            # No dependency. Just build!
+            rule[1]()
+            return
+
+        dependency = self.eval(dependency)
+        target = rule[0].get_target()
+
+        # Criteria for building dependency:
+        # - if there is no target
+        # - if the target doesn't exist
+        # - if it doesn't exist
+        # - if it was more recently changed than the target
+
+        if target is not None:
+            if os.path.exists(target):
+                if os.path.exists(dependency):
+                    if os.path.getmtime(target) >= os.path.getmtime(dependency):
+                        print("*** Nothing to do for '{}' in '{}'. ***".format(dependency, self.__pakefile_class__.__module__))
+                        return
+
+        # Otherwise, find the dependency!
+        found_dependency_rule_name = None
+
+        for dependency_rule_name in self.get_rules():
+            found_rule = self.get_rule(dependency_rule_name)[0]
+
+            if found_rule.get_target() is not None:
+                if self.eval(found_rule.get_target()) == dependency:
+                    # We found our rule!
+                    found_dependency_rule_name = dependency_rule_name
+
+        if found_dependency_rule_name is None:
+            if not os.path.exists(dependency):
+                print("*** No rule found to build '{}' in '{}'. Stop ***".format(dependency, self.__pakefile_class__.__module__))
+                sys.exit()
+        else:
+            self.execute_rule(found_dependency_rule_name)
+
+        rule[1]()
+
+    def __set_pakefile_class__(self, pakefile_class: type):
+        self.__pakefile_class__ = pakefile_class
+
+    def get_pakefile_class(self) -> type:
+        return self.__pakefile_class__
+
+class PakeEnvironment():
+    """ An object containing state information of all loaded Pakefiles """
+
+    def __init__(self):
+        self.__pakefiles__ = dict()
+
+    def get_pakefile(self, path: str) -> Pakefile:
+        """ Returns the Pakefile object of the provided file """
+        return self.__pakefiles__[os.path.abspath(path)]
+
+    def __load_pakefile__(self, path: str) -> Pakefile:
+        """ Loads a Pakefile from the given path """
+
+        path = os.path.abspath(path)
+
+        if not os.path.isfile(path):
+            print("*** Could not find '{}'. Stop ***".format(path))
+            return
+
+        # We inject our own class declaration, so we need to generate our own valid, unique class name
+        # This replaces any periods, colons, or path separators with underscores
+        pakefile_class_name = re.sub("[.:\\" + os.sep + "]", '_', path)
+
+        # The class name will always start with an underscore on Linux
+        if pakefile_class_name.startswith('_'):
+            pakefile_class_name = pakefile_class_name[1:]
+
+        # Validate the class name
+        if re.match(r'^[a-zA-Z]+(\w)*$', pakefile_class_name) is None:
+            print("*** Could not generate a valid class name for '{}'. Stop ***".format(path))
+            return None
+        
+        # Load and modify the file!
+        pakefile_code = open(path).read()#.replace('\n', '\n\t')
+        pakefile_code = "from pake import Pakefile, PakeCommand, PakeRule\n" + pakefile_code
+        #pakefile_code = "from pake import Pakefile, PakeCommand, PakeRule\nclass " + pakefile_class_name + "():\n\t" + pakefile_code
+
+        #pakefile_module = importlib.import_module(path)
+        #print(pakefile_module)
+        #sys.exit()
+
+        pakefile_module = ModuleType(path)
+        sys.modules[path] = pakefile_module
+
+        globals = pakefile_module.__dict__
+        globals['env'] = self
+
+        pakefile = Pakefile()
+        self.__pakefiles__[path] = pakefile
+
+        # Execute the code!
+        exec(pakefile_code, globals)
+
+        pakefile_class = pakefile_module#getattr(pakefile_module, pakefile_class_name)
+        pakefile.__set_pakefile_class__(pakefile_class)
+
+        return pakefile
 
     def run(self, cmd: str, args: str = ""):
         try:
@@ -171,73 +237,31 @@ class PakeEnvironment():
             sys.stdout.write('\033[91m' + res.stderr.decode('utf-8') + '\033[0m')
             sys.stdout.flush()
 
-class PakeDependency():
-    def __init__(self):
-        pass
-
-class PakeTarget():
-    def __init__(self, targets: [str] = None, dependencies: [str] = None, default: bool = False):
-        self.targets = targets
-        self.dependencies = dependencies
-        self.default = default
-        self.name = ""
-
-    def __call__(self, function: MethodType):
-        env = function.__globals__['env']
-        
-        if not env.__has_target__(function.__module__, function.__name__):
-            env.__add_target__(function.__module__, function.__name__, self)
-
-        return function
-
-    def get_name(self):
-        return self.name
-
-    def get_targets(self):
-        return self.targets
-
-    def get_dependencies(self):
-        return self.dependencies
-
-    def is_default(self) -> bool:
-        return self.default
-
-'''
-Convenience method for getting a value from an array or getting a default value
-'''
-def get_or_default(arr: [object], index: object, default: object) -> object:
-    try:
-        return arr[index]
-    except IndexError:
-        return default
-
-def parse_arguments(argv: [str]):
-    pass
-
-def main(argv: [str]):
+def main(argv):
     if len(argv) < 2:
-        # No Pakefile was passed!
-        sys.exit("Usage: {} [Pakefile] <target> <...>".format(argv[0]))
-    
-    pakefile_name = argv[1]
-    target_name = get_or_default(argv, 2, '')
+        print("Usage: {} [Pakefile] <target> <ARGS...>".format(argv[0]))
+        return
 
     env = PakeEnvironment()
-
     pakefile = env.__load_pakefile__(argv[1])
 
-    if pakefile is None:
-        sys.exit("No Pakefile subclass found in {}!".format(pakefile_name))
+    rule_name = None
 
-    # Find the target to execute, either the provided one or the default one
-    if target_name == '':
-        target_dict = env.__get_module_targets__(pakefile.__module__)
-
-        for name in target_dict.keys():
-            if target_dict[name].is_default():
-                getattr(pakefile, name)()
+    if len(argv) >= 3:
+        rule_name = argv[2]
     else:
-        getattr(pakefile, target_name)()
+        # Find default rule!
+        for rule_tuple in pakefile.get_rules().values():
+            rule = rule_tuple[0]
+
+            if rule.is_default():
+                rule_name = rule.get_name()
+
+        if rule_name == None:
+            print("*** No default rule found. Stop ***")
+            return
+
+    pakefile.execute_rule(rule_name)
 
 if __name__ == "__main__":
     main(sys.argv)
