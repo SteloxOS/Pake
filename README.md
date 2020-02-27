@@ -29,10 +29,10 @@ Pakefile currently uses annotations and types to differenciate between the vario
     ```python
     CC = PakeComand('gcc')
     ```
-* Targets are methods denoted by a `@PakefileTarget` annotation.
+* Rules are methods denoted by a `@PakeRule` annotation.
     ```python
-    @PakefileTarget()
-    def build(self):
+    @PakeRule()
+    def build():
         QEMU_i386(QEMU_i386_ARGS)
         ...
     ```
