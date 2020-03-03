@@ -161,7 +161,7 @@ class Pakefile:
         if found_dependency_rule_name is None:
             if not os.path.exists(dependency):
                 print("*** No rule found to build '{}' in '{}'. Stop ***".format(
-                    dependency, self._pakefile_class.__module__)
+                    dependency, self._pakefile_class.__name__)
                 )
                 sys.exit()
         else:
