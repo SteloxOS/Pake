@@ -1,3 +1,6 @@
+# (import statement is unnecessary, it's only there to prevent errors in PyCharm)
+from pake import PakeCommand, PakeRule
+
 # Commands that are to be executed must be declared as PakeCommand objects
 CC = PakeCommand('gcc')
 ECHO = PakeCommand('echo')
@@ -8,6 +11,7 @@ C_FLAGS = '-o $(EXE) $(C_SOURCES)'
 C_SOURCES = "hello.c"
 EXE = "hello"
 
+
 # The PakeRule decorator gives information on the rule.
 # Simplified, the system looks at the dependency and executes the PakeRule with the corresponding target.
 # See Pakefile.execute_rule() for more specific conditions
@@ -15,8 +19,8 @@ EXE = "hello"
 # In this case, when running `./pake.py Pakefile.py run`, the `build` target will be executed first.
 # Wildcards are not yet supported
 @PakeRule(
-    dependency = "$(EXE)",
-    default = True # If the target is omitted when executing, this will be the target executed
+    dependency="$(EXE)",
+    default=True  # If the target is omitted when executing, this will be the target executed
 )
 def run():
     # `env.run(cmd, args)` is the preferred method of running shell commands:
@@ -25,9 +29,10 @@ def run():
     # e.g.: RUN_HELLO = PakeCommand('./hello')
     env.run("./" + EXE)
 
+
 @PakeRule(
-    dependency = "$(C_SOURCES)",
-    target = "$(EXE)"
+    dependency="$(C_SOURCES)",
+    target="$(EXE)"
 )
 def build():
     ECHO('$(CC) $(C_FLAGS)')
