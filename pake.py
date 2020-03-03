@@ -10,7 +10,7 @@ from types import ModuleType, FunctionType
 
 
 def PakeCommand(command: str) -> FunctionType:
-    """ Returns a crafted function that executed the provided shell command (with args) when called """
+    """ Returns a crafted function that executes the provided shell command (with args) when called """
     module = inspect.currentframe().f_back
 
     module_name = module.f_globals['__name__']
